@@ -2,6 +2,7 @@
 
 import copy
 import unittest
+from pathlib import Path
 
 from check_pr import check
 
@@ -13,6 +14,18 @@ class PrConventionTests(unittest.TestCase):
 
     def test_valid(self):
         self.assertEqual(check(self.pr), [])
+
+    def test_actual_team_template(self):
+        template = Path(__file__).resolve().parents[2] / ".github" / "pull_request_template.md"
+        self.pr["body"] = template.read_text(encoding="utf-8").replace(
+            "[DAJ-00](https://)",
+            "[SCRUM-38](https://dajaba.atlassian.net/browse/SCRUM-38)",
+        )
+        self.assertEqual(check(self.pr), [])
+
+    def test_team_heading_still_requires_review_section(self):
+        self.pr["body"] = "Key Changes\nhttps://dajaba.atlassian.net/browse/SCRUM-38"
+        self.assertTrue(check(self.pr))
 
     def test_wrong_branch_and_base(self):
         for part, ref in [("head", "feat/DAJ-38"), ("base", "main")]:
