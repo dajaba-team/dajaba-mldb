@@ -22,9 +22,10 @@ def check(pr):
             errors.append("PR 제목/본문에 브랜치의 Jira 키가 필요합니다.")
         if "https://dajaba.atlassian.net/browse/" + key not in body:
             errors.append("본문에 Jira 이슈 링크가 필요합니다.")
-    for label in ["What I Did", "To Reviewers"]:
-        if label not in body:
-            errors.append(label + " 항목이 필요합니다.")
+    if not any(label in body for label in ["What I Did", "Key Changes"]):
+        errors.append("What I Did 또는 Key Changes 항목이 필요합니다.")
+    if "To Reviewers" not in body:
+        errors.append("To Reviewers 항목이 필요합니다.")
     return errors
 
 
