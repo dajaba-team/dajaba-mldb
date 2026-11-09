@@ -1,0 +1,62 @@
+.venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.pytest_cache/
+**/.ruff_cache/
+DBcheck/.venv/
+DBcheck/reports/*
+!DBcheck/reports/.gitkeep
+
+# 수동 실험 로그·산출물은 제외하고 작업 공간 구조 문서는 유지합니다.
+DBcheck/runs/*
+!DBcheck/runs/.gitkeep
+!DBcheck/runs/README.md
+AssembleDB/runs/*
+!AssembleDB/runs/.gitkeep
+!AssembleDB/runs/README.md
+
+# M5 생성 데이터는 제외하며 패키지 소스와 설정은 계속 추적합니다.
+ml_preparation/runs/
+ml_preparation/build/
+
+# Google Drive가 관리하는 동기화 버퍼입니다.
+.tmp.drivedownload/
+.tmp.driveupload/
+
+# Public MLDB boundary: source is kept locally, never moved or deleted.
+/IBM_DB/
+/SAML_DB/
+/artifacts/
+/output/
+/tmp/
+/dajaba_servicedb/
+/status-management/
+/Dajaba-ML/
+/ml_preparation/
+/_assistant/
+/.codex/
+/.vscode/
+/docs/
+/문서관리/
+/머신러닝 예시규격/
+/AssembleDB/outputs/
+/AssembleDB/outputs_staged/
+/AssembleDB/deliveries/
+/AssembleDB/state/
+/DBcheck/cache/
+/DBcheck/input_audits/
+.env
+.env.*
+*.local.json
+*.local.toml
+*.duckdb
+*.duckdb.wal
+*.log
+
+/data-local/
+/DBcheck/configs/*
+!/DBcheck/configs/currencies.json
+!/DBcheck/configs/*.example.toml
+/AssembleDB/configs/*
+!/AssembleDB/configs/*.example.toml

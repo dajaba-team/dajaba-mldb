@@ -1,0 +1,8 @@
+# Example only. No warning is pre-approved, no service sample is requested.
+schema_version = "dajaba-assembly-v2"
+dbcheck_config = "../../DBcheck/configs/source.local.toml"
+output_root = "../outputs"
+batch_rows = 25000
+acknowledged_warnings = []
+[service]
+enabled = false

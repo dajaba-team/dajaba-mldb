@@ -1,0 +1,26 @@
+# Replace data-local paths with authorized local files before use.
+schema_version = "dajaba-source-validation-v2"
+output_root = "../reports"
+currency_map = "currencies.json"
+threads = 1
+[[sources]]
+id = "ibm_hi_small"
+kind = "ibm"
+path = "../../data-local/HI-Small_Trans.csv"
+accounts = "../../data-local/HI-Small_accounts.csv"
+patterns = "../../data-local/HI-Small_Patterns.txt"
+label_semantics = "AMLWORLD_ILLICIT_FLOW"
+[[sources]]
+id = "ibm_li_small"
+kind = "ibm"
+path = "../../data-local/LI-Small_Trans.csv"
+accounts = "../../data-local/LI-Small_accounts.csv"
+patterns = "../../data-local/LI-Small_Patterns.txt"
+label_semantics = "AMLWORLD_ILLICIT_FLOW"
+[[sources]]
+id = "saml_d"
+kind = "saml"
+path = "../../data-local/SAML-D.csv"
+label_semantics = "SOURCE_DESIGNATED_SUSPICIOUS"
+amount_precision = 38
+amount_scale = 16
