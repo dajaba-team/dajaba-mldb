@@ -65,6 +65,88 @@ def checks(report):
     return {r["rule"]: r for r in report["checks"]}
 
 
+@pytest.mark.parametrize(
+    "case, expected_status",
+    [
+        ("clean", "VERIFIED"),
+        ("ambiguous", "INCOMPLETE"),
+        ("malformed", "INVALID_PATTERN_FILE"),
+    ],
+)
+def test_pattern_membership_preserves_original_row_identity(setup, case, expected_status):
+    cfg, source, row = setup
+    positive = row[:10] + ["1"]
+    duplicate = ["2022/09/01 00:01", *positive[1:]]
+    reused = ["2022/09/01 00:02", *positive[1:]]
+    group_partner = ["2022/09/01 00:03", *positive[1:]]
+    different_amount_text = positive.copy()
+    different_amount_text[7] = "123.450"
+    write_csv(source.path, IBM, [positive, duplicate, duplicate, reused, group_partner])
+    patterns = source.path.with_name("Patterns.txt")
+    source = replace(source, patterns=patterns)
+    groups = [("FAN-IN", [positive])]
+    if case == "ambiguous":
+        groups.extend(
+            [
+                ("CYCLE", [duplicate]),
+                ("FAN-OUT", [group_partner, different_amount_text]),
+                ("LAYERING", [reused]),
+                ("LAYERING", [reused]),
+            ]
+        )
+    with patterns.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        for name, rows in groups:
+            stream.write(f"BEGIN LAUNDERING ATTEMPT - {name}: fixture\n")
+            writer.writerows(rows)
+            if case != "malformed":
+                stream.write(f"END LAUNDERING ATTEMPT - {name}\n")
+
+    raw_sha, patterns_sha = sha256(source.path), sha256(patterns)
+    root, ok = execute(replace(cfg, sources=(source,)))
+    report = result(root, source)
+    reference = report["pattern_membership"]
+    artifact = root / source.id / reference["path"]
+    membership = json.loads(artifact.read_text(encoding="utf-8"))
+    assert ok and reference["status"] == membership["status"] == expected_status
+    assert reference["contract_version"] == membership["contract_version"]
+    assert reference["sha256"] == sha256(artifact)
+    assert membership["source_release"] == f"{source.id}:{raw_sha}"
+    assert membership["source_csv"]["sha256"] == report["input"]["sha256"] == raw_sha
+    assert membership["patterns"]["sha256"] == patterns_sha
+    assert sha256(source.path) == raw_sha and sha256(patterns) == patterns_sha
+    assert membership["source_fields"]["timestamp_precision"] == "MINUTE"
+    assert membership["source_fields"]["amount_scale"] == 12
+    if case == "malformed":
+        assert "pattern membership matching" in report["not_checked"]
+        assert membership["verified_links"] is None
+        assert membership["counts"] is None
+        return
+
+    assert "pattern membership matching" not in report["not_checked"]
+    assert membership["verified_links"] == [
+        {
+            "pattern_group_ordinal": 0,
+            "pattern_group_begin_line": 1,
+            "pattern_line_number": 2,
+            "source_row_id": 0,
+        }
+    ]
+    totals = membership["counts"]
+    assert totals["verified_positive_source_rows"] == 1
+    assert totals["positive_source_rows_without_verified_pattern"] == 4
+    if case == "ambiguous":
+        assert totals["blocked_pattern_groups"] == 4
+        assert totals["unmatched_pattern_rows"] == 1
+        assert totals["multiple_match_pattern_rows"] == 1
+        assert totals["reused_source_row_pattern_rows"] == 2
+        assert totals["other_rows_in_blocked_groups"] == 1
+        assert all("source_row_id" not in member for member in membership["unresolved_pattern_rows"])
+    else:
+        assert totals["blocked_pattern_groups"] == 0
+        assert membership["unresolved_pattern_rows"] == []
+
+
 def test_full_scan_preserves_raw_identity_and_has_no_ml(setup):
     cfg, s, _ = setup
     before = sha256(s.path)
@@ -179,7 +261,7 @@ def test_saml_single_amount_and_structural_absence(setup):
             ]
         ],
     )
-    saml = Source("saml_d", "saml", raw, "SOURCE_DESIGNATED_SUSPICIOUS")
+    saml = Source("saml_d", "saml", raw, "SOURCE_DESIGNATED_SUSPICIOUS", amount_scale=16)
     root, ok = execute(
         replace(cfg, sources=(saml,), currency_aliases={"US dollar": "USD", "Euro": "EUR"})
     )
@@ -187,6 +269,15 @@ def test_saml_single_amount_and_structural_absence(setup):
     assert ok and checks(r)["SAML_CURRENCY_BASIS_UNRESOLVED"]["affected_rows"] == 1
     assert checks(r)["BANK_CUSTOMER_REFERENCE"]["status"] == "WARN"
     assert not r["auxiliary_inputs"]
+    reference = r["pattern_membership"]
+    artifact = root / saml.id / reference["path"]
+    membership = json.loads(artifact.read_text(encoding="utf-8"))
+    assert reference["sha256"] == sha256(artifact)
+    assert membership["status"] == "NOT_EVALUABLE"
+    assert membership["reason"] == "SAML_NO_SUPPLIED_PATTERNS_OR_VERIFIED_EVENT_ID"
+    assert membership["counts"] is None and membership["verified_links"] is None
+    assert membership["source_fields"]["timestamp_precision"] == "SECOND"
+    assert membership["source_fields"]["amount_scale"] == 16
 
 
 def test_hour_gap_is_counted(setup):
