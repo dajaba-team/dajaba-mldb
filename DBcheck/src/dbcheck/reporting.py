@@ -8,7 +8,13 @@ from .data_contract import POLICY_VERSION
 
 
 def _build_source_report(
-    source: Source, config: Config, raw: dict, details: dict, code_digest: str
+    source: Source,
+    config: Config,
+    raw: dict,
+    details: dict,
+    code_digest: str,
+    *,
+    pattern_membership: dict | None = None,
 ) -> dict:
     rules = details["rules"]
     if raw["rows"] == 0:
@@ -101,6 +107,7 @@ def _build_source_report(
         if any(r["status"] == "WARN" for r in rules)
         else "PASS"
     )
+    not_checked = ["pattern membership matching", "actual PostgreSQL COPY acceptance"]
     result = dict(
         contract_version=CONTRACT_VERSION,
         status=status,
@@ -129,9 +136,13 @@ def _build_source_report(
         checks=rules,
         distribution_profile=source.id + "_profile.json",
         full_scan_complete=True,
-        not_checked=["pattern membership matching", "actual PostgreSQL COPY acceptance"],
+        not_checked=not_checked,
         next_module="AssembleDB; WARN requires policy acknowledgement; FAIL blocks this source only",
     )
+    if pattern_membership is not None:
+        result["pattern_membership"] = pattern_membership
+        if pattern_membership["status"] in {"VERIFIED", "INCOMPLETE"}:
+            not_checked.remove("pattern membership matching")
     return result
 
 

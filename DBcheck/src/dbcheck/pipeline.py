@@ -11,6 +11,7 @@ from uuid import uuid4
 from .checks import detailed_checks
 from .config import CONTRACT_VERSION, Config
 from .distribution import profile, sha256, write_json
+from .patterns import PATTERN_CONTRACT, PATTERN_REPORT, PatternMembership
 from .reporting import _build_source_report, _expected_counts, _write_source_summary
 
 LOG = logging.getLogger("dbcheck")
@@ -55,11 +56,43 @@ def execute(config: Config, selected: list[str] | None = None) -> tuple[Path, bo
         folder.mkdir()
         try:
             LOG.info("%s: raw full scan", source.id)
-            raw = profile(source.id, str(source.path), source.kind, folder)
+            membership = PatternMembership(source)
+            raw = profile(
+                source.id, str(source.path), source.kind, folder, pattern_membership=membership
+            )
             details = detailed_checks(source, config, folder)
             if sha256(source.path) != raw["sha256"]:
                 raise RuntimeError("Transactions changed during detailed checks")
-            result = _build_source_report(source, config, raw, details, code_digest)
+            if source.kind == "ibm":
+                pattern_inputs = [
+                    item for item in details["auxiliary_inputs"] if item["role"] == "patterns"
+                ]
+                observed = [item["sha256"] for item in pattern_inputs]
+                expected = [membership.pattern_sha256] if membership.pattern_sha256 else []
+                current = (
+                    sha256(source.patterns)
+                    if source.patterns is not None and source.patterns.is_file()
+                    else None
+                )
+                if observed != expected or current != membership.pattern_sha256:
+                    raise RuntimeError("Patterns changed during membership verification")
+                if membership.membership_scanned:
+                    pattern_inputs[0]["scope"] = (
+                        "fingerprint and full original-row membership; see pattern_membership"
+                    )
+            pattern_report = membership.report(source, raw)
+            pattern_path = folder / PATTERN_REPORT
+            write_json(pattern_path, pattern_report)
+            pattern_ref = dict(
+                contract_version=PATTERN_CONTRACT,
+                path=PATTERN_REPORT,
+                sha256=sha256(pattern_path),
+                status=pattern_report["status"],
+                reason=pattern_report["reason"],
+            )
+            result = _build_source_report(
+                source, config, raw, details, code_digest, pattern_membership=pattern_ref
+            )
             status = result["status"]
             expected = _expected_counts(source, raw, details, status)
             write_json(folder / "source_expected.json", expected)

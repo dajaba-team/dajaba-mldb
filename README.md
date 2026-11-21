@@ -2,7 +2,7 @@
 
 **원천 데이터를 검증하고, ML이 읽을 수 있는 출처별 데이터로 조립합니다.**
 
-> 2026-11-09 KST 갱신. 현재 로컬 작업 폴더를 기준으로 설명합니다. GitHub 게시·새 환경 설치·이번 리팩터링의 실행 검증은 별도 단계입니다.
+DBcheck와 AssembleDB의 출처별 검사 및 조립 파일 계약을 설명합니다. 서비스 DB 적재는 별도 단계입니다.
 
 ## 이 저장소가 하는 일
 
@@ -55,12 +55,16 @@ flowchart LR
 
 공통 개발 환경은 Python 3.12를 기준으로 맞춥니다. DBcheck는 PyArrow·Polars, AssembleDB는 DBcheck에 의존합니다. 각 패키지의 pyproject.toml을 기준으로 설치 순서를 맞춥니다.
 
-현재는 기존 로컬 작업 공간에서 실행하는 구조입니다. 독립 저장소 설치 명령은 설정 경로와 공유 도구를 정리한 뒤 검증해 추가합니다. 옛 실행 폴더가 포함된 예제를 그대로 실행하지 마세요.
+새 가상환경에 두 패키지를 함께 설치하고 작업용 설정 사본을 구성합니다. [설치 및 데이터 인계](docs/final-data-handoff.md)를 참고합니다.
 
 ## CI/CD 구조
 
+![다자바 MLDB의 원천 검증과 조립 데이터 인계 및 GitHub 검사](docs/images/mldb-architecture-ci.png)
+
+원격 `ml-sync-check`는 PR 규약과 동기화 도구를 검사하고, `ml-sync-manual`은 수동 WBS/Jira 동기화를 담당한다. 원천 검사와 파일 조립·검증은 [로컬 데이터 인계 절차](docs/final-data-handoff.md)를 따른다.
+
 <!-- cicd-pipeline-image: mldb-cicd-pipeline -->
-![MLDB CI/CD: 현재 상태 동기화와 제안 데이터 검증 파이프라인](docs/images/mldb-cicd-pipeline.png)
+[이전 CI/CD 그림](docs/images/mldb-cicd-pipeline.png)
 
 [확대 가능한 SVG 원본](docs/images/mldb-cicd-pipeline.svg)
 
@@ -87,28 +91,19 @@ flowchart LR
 
 ## 로컬 작업 공간과 공개 경계
 
-이 작업 공간의 DBcheck·AssembleDB가 MLDB 공개 대상입니다. ml_preparation은 같은 로컬 작업 공간에 있지만 ML 저장소용 코드입니다. 원본이나 코드를 이동하지 않습니다. 현재 ML의 별도 Git 경계는 아직 연결하지 않았습니다. staging 준비본은 업로드 원본으로 사용하지 않습니다.
-
-작은 회귀 검사는 프로젝트 루트에서 .venv의 Python을 사용해 tools/Test-Release.ps1로 사용자가 직접 실행합니다. 로그와 summary.json은 artifacts/release-check-*에 남습니다. 이 도구는 원천 전처리나 운영 모델 학습을 실행하지 않습니다. 합성 데이터 기반 검사 내부 학습은 포함될 수 있습니다.
+이 저장소의 공개 코드 범위는 DBcheck와 AssembleDB입니다. 조립 파일의 소비, 학습용 경보·피처 생성과 모델 학습은 ML 측 작업입니다.
 
 ## 설치와 수동 검증
 
-기존 환경을 재생성하지 않습니다. Python 3.12 환경이 이미 있다면 필요할 때만 로컬 패키지를 설치합니다. 아래 설치 명령도 이번 작업에서는 실행하지 않았습니다.
+Python 3.12 가상환경을 활성화하고 저장소 루트에서 실행합니다.
 
-```powershell
-# 실제 프로젝트 루트에서 사용자가 실행
-.\.venv\Scripts\python.exe -m pip install -e .\DBcheck -e .\AssembleDB -e '.\ml_preparation[training]'
-.\.venv\Scripts\python.exe -m pip install 'pytest>=8,<10' 'ruff>=0.9,<1'
+```sh
+python -m pip install ./DBcheck ./AssembleDB pytest
+python -m pip check
+python -m pytest DBcheck/tests AssembleDB/tests -q
 ```
 
-검증만 실행하려면 설치와 구분해서 아래를 실행합니다.
-
-```powershell
-Set-Location 'C:\Dajaba'
-& .\tools\Test-Release.ps1
-```
-
-마지막 EVIDENCE_DIRECTORY 안의 ruff.log, mldb_tests.log, ml_tests.log와 summary.json을 확인합니다. 실패하면 후속 단계는 실행하지 않습니다. 기존 run, 입력 인덱스, DB, 운영 모델은 변경하지 않습니다. 테스트 자체는 임시 합성 파일을 만들 수 있습니다.
+출처별 조립·검증·인계 명령은 [데이터 인계 절차](docs/final-data-handoff.md)에 있습니다.
 
 ## 기존 작업과 이력 보존
 

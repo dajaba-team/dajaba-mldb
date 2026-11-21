@@ -4,5 +4,7 @@ dbcheck_config = "../../DBcheck/configs/source.local.toml"
 output_root = "../outputs"
 batch_rows = 25000
 acknowledged_warnings = []
+# Optional ML-only output selection. Omit for CSV, JSON and Parquet.
+# ml_formats = ["parquet"]
 [service]
 enabled = false
