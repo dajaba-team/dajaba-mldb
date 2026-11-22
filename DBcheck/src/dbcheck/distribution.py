@@ -21,6 +21,7 @@ import pyarrow.compute as _compute
 import pyarrow.csv as pacsv
 
 from .data_contract import NA_TOKENS, UNKNOWN_TOKENS
+from .patterns import PatternMembership
 
 
 class ArrowCompute(Protocol):
@@ -137,7 +138,14 @@ def time_rows(hours: dict) -> list[dict]:
     return rows
 
 
-def profile(source_id: str, rel: str, kind: str, out: Path) -> dict:
+def profile(
+    source_id: str,
+    rel: str,
+    kind: str,
+    out: Path,
+    *,
+    pattern_membership: PatternMembership | None = None,
+) -> dict:
     path = Path(rel).resolve()
     stat_before = path.stat()
     fingerprint = sha256(path)
@@ -181,6 +189,8 @@ def profile(source_id: str, rel: str, kind: str, out: Path) -> dict:
     for batch_no, batch in enumerate(reader, 1):
         cols = [batch.column(i) for i in range(len(names))]
         n = len(batch)
+        if pattern_membership is not None:
+            pattern_membership.observe(cols, rows)
         for i, col in enumerate(cols):
             stripped = pc.utf8_trim_whitespace(col)
             upper = pc.utf8_upper(stripped)
@@ -320,6 +330,14 @@ def profile(source_id: str, rel: str, kind: str, out: Path) -> dict:
     accounted = sum(r["rows"] for r in hourly) + quality["timestamp_parse_failure"]
     if accounted != rows or not unchanged:
         raise RuntimeError(f"{source_id}: reconciliation or immutable-input verification failed")
+    not_checked = [
+        "full-row exact duplicates",
+        "IBM accounts foreign keys",
+        "pattern membership matching",
+        "monetary DECIMAL overflow/scale",
+        "external expected timestamp range",
+        "live PostgreSQL COPY compatibility",
+    ]
     result = dict(
         source_id=source_id,
         path=str(path),
@@ -358,15 +376,10 @@ def profile(source_id: str, rel: str, kind: str, out: Path) -> dict:
             unparseable_time_rows=quality["timestamp_parse_failure"],
         ),
         duration_seconds=round(time.perf_counter() - start, 3),
-        not_checked=[
-            "full-row exact duplicates",
-            "IBM accounts foreign keys",
-            "pattern membership matching",
-            "monetary DECIMAL overflow/scale",
-            "external expected timestamp range",
-            "live PostgreSQL COPY compatibility",
-        ],
+        not_checked=not_checked,
     )
+    if pattern_membership is not None and pattern_membership.membership_scanned:
+        not_checked.remove("pattern membership matching")
     write_json(out / f"{source_id}_profile.json", result)
     LOG.info(
         "%s complete: %s rows, %s positives, %s .. %s",

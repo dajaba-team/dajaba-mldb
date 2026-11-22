@@ -5,13 +5,14 @@ import logging
 from pathlib import Path
 
 from .config import load
+from .pattern_handoff import SOURCE_IDS, create_handoff, verify_handoff
 from .pipeline import execute, verify_run
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    build = sub.add_parser("build", help="기존 원천별 세 형식 조립")
+    build = sub.add_parser("build", help="원천별 조립; ML 형식은 설정으로 선택, 기본은 세 형식")
     build.add_argument(
         "--config", type=Path, default=Path(__file__).resolve().parents[2] / "configs/default.toml"
     )
@@ -21,6 +22,17 @@ def main(argv=None):
     build.add_argument("--resume", type=Path)
     verify = sub.add_parser("verify", help="선언된 출력의 형식·타입·값·지문 재검증")
     verify.add_argument("--run", type=Path, required=True)
+    handoff = sub.add_parser(
+        "pattern-handoff", help="DBCheck 사건 연결과 기존 ML 거래 UID를 새 인계 폴더에 보존"
+    )
+    handoff.add_argument("--run", type=Path, required=True, help="기존 AssembleDB 실행 폴더")
+    handoff.add_argument("--validation-run", type=Path, required=True)
+    handoff.add_argument("--output", type=Path, required=True, help="아직 존재하지 않는 새 폴더")
+    handoff.add_argument("--source", action="append", choices=SOURCE_IDS)
+    handoff_verify = sub.add_parser(
+        "verify-pattern-handoff", help="인계 지문과 실제 ML 거래 UID 연결만 다시 확인"
+    )
+    handoff_verify.add_argument("--run", type=Path, required=True, help="새 인계 폴더")
     audit = sub.add_parser("audit", help="원본과 기존 조립 결과의 독립 감사")
     audit.add_argument("--config", type=Path, required=True)
     audit.add_argument("--run", type=Path, required=True)
@@ -53,6 +65,19 @@ def main(argv=None):
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
+        if args.command in {"pattern-handoff", "verify-pattern-handoff"}:
+            if args.command == "pattern-handoff":
+                result = create_handoff(args.run, args.validation_run, args.output, args.source)
+                print(f"PATTERN_HANDOFF_DIRECTORY={args.output.resolve()}", flush=True)
+                statuses = {sid: item["status"] for sid, item in result["sources"].items()}
+            else:
+                result = verify_handoff(args.run)
+                statuses = result["sources"]
+            print(f"PATTERN_HANDOFF={result['status']}", flush=True)
+            print(f"EVENT_MEMBERSHIP_COMPLETE={result['event_membership_complete']}", flush=True)
+            for sid, status in statuses.items():
+                print(f"{sid}: {status}", flush=True)
+            return 0
         if args.command == "build":
             folder, success = execute(
                 load(args.config), args.validation_run, args.purpose, args.source, args.resume

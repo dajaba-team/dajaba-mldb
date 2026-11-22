@@ -51,8 +51,10 @@ def code_fingerprint() -> str:
     return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
 
 
-def make_writer(folder: Path, table: str, schema: pa.Schema, metadata: dict) -> DatasetWriter:
-    return DatasetWriter(folder / table, schema, dict(**metadata, table=table))
+def make_writer(
+    folder: Path, table: str, schema: pa.Schema, metadata: dict, *, formats=None
+) -> DatasetWriter:
+    return DatasetWriter(folder / table, schema, dict(**metadata, table=table), formats=formats)
 
 
 def ensure_space(path: Path) -> None:
@@ -187,9 +189,12 @@ def assemble_source(source, config: Config, validation: Path, folder: Path, purp
     if ml:
         metadata = dict(**common, purpose="ml", scope="FULL_SOURCE", labels_separate=True)
         writers["ml_transactions"] = make_writer(
-            folder / "ml", "transactions", transaction_schema(source), metadata
+            folder / "ml", "transactions", transaction_schema(source), metadata,
+            formats=config.ml_formats,
         )
-        writers["ml_labels"] = make_writer(folder / "ml", "labels", label_schema(source), metadata)
+        writers["ml_labels"] = make_writer(
+            folder / "ml", "labels", label_schema(source), metadata, formats=config.ml_formats
+        )
     if service:
         selection = config.service
         assert selection is not None
@@ -312,6 +317,7 @@ def assemble_source(source, config: Config, validation: Path, folder: Path, purp
                 "accounts",
                 ACCOUNT_SCHEMA,
                 dict(**common, purpose="ml", scope="FULL_SOURCE"),
+                formats=config.ml_formats,
             )
             if ml
             else None
@@ -512,6 +518,8 @@ def execute(
         purpose=purpose,
         selected_sources=sorted(selected_ids),
     )
+    if config.ml_formats is not None:
+        binding["ml_formats"] = list(config.ml_formats)
     config.output.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any]
     if resume:

@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -30,7 +31,8 @@ def csv_file(path, header, rows):
 
 
 @pytest.fixture
-def fixture(tmp_path):
+def fixture(tmp_path, request):
+    hi_id = getattr(request, "param", "ibm_hi_small")
     inputs = tmp_path / "input"
     inputs.mkdir()
     rows = [
@@ -98,7 +100,7 @@ def fixture(tmp_path):
 output_root="reports"
 currency_map="currencies.json"
 [[sources]]
-id="ibm_hi_small"
+id="{hi_id}"
 kind="ibm"
 path="input/hi.csv"
 accounts="input/accounts.csv"
@@ -602,3 +604,94 @@ def test_service_dimension_write_failure_preserves_prior_parts(tmp_path, monkeyp
     assert (tmp_path / "service" / "entities" / "schema.arrow").is_file()
     assert not (tmp_path / "service" / "entities" / "manifest.json").exists()
     assert not (tmp_path / "source_manifest.json").exists()
+
+
+@pytest.mark.parametrize(
+    "formats", [("parquet",), ("csv", "parquet"), ("json", "parquet"), ("csv", "json", "parquet")]
+)
+def test_selected_ml_formats_are_lossless_and_leave_service_defaults(fixture, formats):
+    config, validation = fixture
+    assert config.ml_formats is None
+    legacy, ok = execute(config, validation)
+    assert ok
+    root, ok = execute(replace(config, ml_formats=formats), validation)
+    assert ok and verify_run(root)["status"] == "VERIFIED"
+    assert json.loads((root / "run.json").read_text())["binding"]["ml_formats"] == list(formats)
+    for source in config.check.sources:
+        old_folder, old_info = manifest(legacy, source.id)
+        folder, info = manifest(root, source.id)
+        assert info["input_fingerprints"] == old_info["input_fingerprints"]
+        assert info["source_release"] == old_info["source_release"]
+        assert info["datasets"] == old_info["datasets"]
+        for name, item in info["datasets"].items():
+            dataset = folder / item["path"]
+            meta = json.loads((dataset / "manifest.json").read_text())
+            if name.startswith("ml_"):
+                assert meta["formats"] == list(formats)
+                assert meta["format_reload_verified"] is True
+                assert meta["three_format_reload_verified"] == (len(formats) == 3)
+                expected = {"." + fmt for fmt in formats}
+            else:
+                assert "formats" not in meta
+                assert meta["three_format_reload_verified"] is True
+                expected = {".csv", ".json", ".parquet"}
+            for part in meta["parts"]:
+                assert {Path(f["path"]).suffix for f in part["files"]} == expected
+            assert table(folder, item["path"]).equals(table(old_folder, item["path"]))
+
+
+@pytest.mark.parametrize("formats", [[], ["csv"], ["parquet", "parquet"], ["unknown"], [1], "parquet"])
+def test_invalid_ml_formats_config_is_rejected(fixture, formats):
+    config, _ = fixture
+    config.path.write_text(
+        "ml_formats=" + json.dumps(formats) + "\n" + config.path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="ml_formats"):
+        load(config.path)
+
+
+def test_parquet_selection_loads_and_changed_selection_cannot_resume(fixture):
+    config, validation = fixture
+    config.path.write_text(
+        'ml_formats=["parquet"]\n' + config.path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    config = load(config.path)
+    assert config.ml_formats == ("parquet",)
+    root, ok = execute(config, validation, purpose="ml")
+    assert ok
+    with pytest.raises(ValueError, match="resume is forbidden"):
+        execute(replace(config, ml_formats=("csv", "parquet")), validation, purpose="ml", resume=root)
+    path = next(root.glob("*/attempt-01/ml/transactions/*.parquet"))
+    with path.open("ab") as stream:
+        stream.write(b"tampered")
+    with pytest.raises(ValueError, match="modified output"):
+        verify_run(root)
+
+
+@pytest.mark.parametrize("fixture", ["ibm_hi_medium", "ibm_li_medium"], indirect=True)
+def test_medium_parquet_build_preserves_raw_amounts_labels_and_identity(fixture):
+    config, validation = fixture
+    source = config.check.sources[0]
+    root, ok = execute(
+        replace(config, ml_formats=("parquet",)), validation, purpose="ml", selected=[source.id]
+    )
+    assert ok and verify_run(root)["status"] == "VERIFIED"
+    folder, info = manifest(root, source.id)
+    release = f"{source.id}:{sha256(source.path)}"
+    assert info["source_release"] == release
+    assert set(info["datasets"]) == {"ml_transactions", "ml_labels", "ml_accounts"}
+    tx, labels = table(folder, "ml/transactions"), table(folder, "ml/labels")
+    assert tx.column("transaction_uid").to_pylist() == [f"{release}:{i}" for i in range(4)]
+    assert tx.column("transaction_uid").equals(labels.column("transaction_uid"))
+    assert tx.column("source_row_id").to_pylist() == [0, 1, 2, 3]
+    assert tx.column("amount_paid_raw").to_pylist() == ["1.123456789012"] * 4
+    assert tx.column("amount_received_raw").to_pylist() == ["1.123456789012"] * 4
+    assert tx.column("amount_paid").to_pylist() == [Decimal("1.123456789012")] * 4
+    assert tx.column("currency_paid_raw").to_pylist() == ["US Dollar"] * 4
+    assert tx.schema.field("ts").type == pa.timestamp("us")
+    assert all(json.loads(key)[0] == release for key in tx.column("from_account_key").to_pylist())
+    assert labels.column("source_label_raw").to_pylist() == ["1", "0", "1", "0"]
+    assert "source_positive" not in tx.schema.names
+    assert not list((folder / "ml").glob("**/*.csv"))
+    assert not list((folder / "ml").glob("**/part-*.json"))

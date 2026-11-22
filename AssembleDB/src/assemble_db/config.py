@@ -8,6 +8,8 @@ from pathlib import Path
 from dbcheck.config import Config as CheckConfig
 from dbcheck.config import load as load_check
 
+from .exporting import FORMATS
+
 VERSION = "dajaba-assembly-v2"
 
 
@@ -29,6 +31,7 @@ class Config:
     batch_rows: int
     acknowledged_warnings: frozenset[str]
     service: ServiceSelection | None
+    ml_formats: tuple[str, ...] | None = None
 
 
 def load_service_selection(spec: dict) -> ServiceSelection | None:
@@ -82,6 +85,7 @@ def load(path: Path) -> Config:
         "batch_rows",
         "acknowledged_warnings",
         "service",
+        "ml_formats",
     }:
         raise ValueError("Unknown assembly config key; legacy model gates are retired")
     if data.get("schema_version") != VERSION:
@@ -99,4 +103,17 @@ def load(path: Path) -> Config:
     if not isinstance(warnings, list) or not all(isinstance(x, str) for x in warnings):
         raise ValueError("acknowledged_warnings must list explicit rule codes")
     service = load_service_selection(data.get("service", {}))
-    return Config(path, check, output, rows, frozenset(warnings), service)
+    formats = None
+    if "ml_formats" in data:
+        value = data["ml_formats"]
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(type(item) is not str for item in value)
+            or len(set(value)) != len(value)
+            or set(value) - set(FORMATS)
+            or "parquet" not in value
+        ):
+            raise ValueError("ml_formats must list distinct csv/json/parquet formats including parquet")
+        formats = tuple(value)
+    return Config(path, check, output, rows, frozenset(warnings), service, formats)
