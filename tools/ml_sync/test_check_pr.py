@@ -10,7 +10,7 @@ from check_pr import check
 class PrConventionTests(unittest.TestCase):
     def setUp(self):
         self.pr = {"head": {"ref": "feat/SCRUM-38"}, "base": {"ref": "develop"},
-                   "title": "SCRUM-38 sync", "body": "What I Did\nhttps://dajaba.atlassian.net/browse/SCRUM-38\nTo Reviewers"}
+                   "title": "SCRUM-38 sync", "body": "What I Did\n개발 메모\nTo Reviewers"}
 
     def test_valid(self):
         self.assertEqual(check(self.pr), [])
@@ -19,12 +19,13 @@ class PrConventionTests(unittest.TestCase):
         template = Path(__file__).resolve().parents[2] / ".github" / "pull_request_template.md"
         self.pr["body"] = template.read_text(encoding="utf-8").replace(
             "[DAJ-00](https://)",
-            "[SCRUM-38](https://dajaba.atlassian.net/browse/SCRUM-38)",
+            "SCRUM-38",
         )
+        self.pr["title"] = "sync"
         self.assertEqual(check(self.pr), [])
 
     def test_team_heading_still_requires_review_section(self):
-        self.pr["body"] = "Key Changes\nhttps://dajaba.atlassian.net/browse/SCRUM-38"
+        self.pr["body"] = "Key Changes\nSCRUM-38"
         self.assertTrue(check(self.pr))
 
     def test_wrong_branch_and_base(self):
@@ -33,17 +34,22 @@ class PrConventionTests(unittest.TestCase):
             pr[part]["ref"] = ref
             self.assertTrue(check(pr))
 
-    def test_missing_link_or_sections(self):
-        for body in [None, "What I Did\nTo Reviewers", "https://dajaba.atlassian.net/browse/SCRUM-38"]:
+    def test_missing_sections(self):
+        for body in [None, "What I Did", "To Reviewers", "SCRUM-38"]:
             pr = copy.deepcopy(self.pr)
             pr["body"] = body
             self.assertTrue(check(pr))
 
-    def test_key_prefix_does_not_match(self):
-        pr = copy.deepcopy(self.pr)
-        pr["title"] = "SCRUM-380"
-        pr["body"] = "What I Did\nhttps://dajaba.atlassian.net/browse/SCRUM-380\nTo Reviewers"
-        self.assertTrue(check(pr))
+    def test_missing_or_nonmatching_key(self):
+        for title in ("sync", "SCRUM-39", "SCRUM-380", "SCRUM-38x", "xSCRUM-38", "SCRUM-38_a", "PRE-SCRUM-38"):
+            with self.subTest(title=title):
+                self.pr["title"] = title
+                self.assertTrue(check(self.pr))
+
+    def test_key_in_body_with_punctuation(self):
+        self.pr["title"] = "sync"
+        self.pr["body"] = "Key Changes\n(SCRUM-38)\nTo Reviewers"
+        self.assertEqual(check(self.pr), [])
 
     def test_shell_text_is_only_data(self):
         self.pr["title"] += " $(echo unsafe) `echo unsafe`"

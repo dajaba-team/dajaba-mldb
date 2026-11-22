@@ -43,7 +43,7 @@ python tools/ml_sync/sync.py apply --plan sync-plan.json --journal sync-journal.
 
 ## GitHub 실행과 운영 미결
 
-`ml-sync-check.yml`은 develop 대상 PR의 브랜치/Jira 링크/본문 형식과 단위 테스트를 검사한다. Gitmoji + Type 명사형 커밋을 사용하고 동료 최소 1명의 승인 후 develop에 병합한다. 브랜치 보호나 프로젝트 전체 설정은 변경하지 않는다.
+`ml-sync-check.yml`은 develop 대상 PR의 브랜치, 제목 또는 본문의 일치하는 Jira 키, 본문 형식과 단위 테스트를 검사한다. Gitmoji + Type 명사형 커밋을 사용하고 동료 최소 1명의 승인 후 develop에 병합한다. 브랜치 보호나 프로젝트 전체 설정은 변경하지 않는다.
 
 `ml-sync-manual.yml`은 develop에서 **수동 실행**하며 기본값은 계획만 생성한다. `apply=true`일 때만 실제 쓰기를 수행한다. 사용 전 저장소의 `ML_SYNC_JIRA_EMAIL`, `ML_SYNC_JIRA_API_TOKEN`, `ML_SYNC_GOOGLE_ACCESS_TOKEN` secrets가 필요하다. GitHub 토큰은 해당 실행의 읽기 전용 토큰을 사용한다. 플러그인 연결의 인증은 GitHub Actions로 전달되지 않는다. 이번 작업에서 secrets를 등록하거나 원격 인증 실행을 검증하지 않았다. Google access token은 만료되므로 수동 실행 전 갱신이 필요하며 장기 예약 운영에는 별도 인증 갱신 구성이 필요하다.
 
