@@ -2,11 +2,11 @@
 
 **원천 데이터를 검증하고, ML이 읽을 수 있는 출처별 데이터로 조립합니다.**
 
-DBcheck와 AssembleDB의 출처별 검사 및 조립 파일 계약을 설명합니다. 서비스 DB 적재는 별도 단계입니다.
+DBcheck와 AssembleDB의 출처별 검사 및 조립 파일 계약을 설명합니다. 서비스 DB의 원천 적재는 백엔드가 담당합니다.
 
 ## 이 저장소가 하는 일
 
-- DBcheck: HI-Small·LI-Small·SAML-D의 스키마, 금액, 식별 관계, 중복과 원천 품질을 읽기 전용으로 검사합니다.
+- DBcheck: IBM AML HI·LI와 SAML-D의 스키마, 금액, 식별 관계, 중복을 출처별로 읽기 전용 검사합니다. 공개 설정 예제는 HI-Small·LI-Small·SAML-D를 사용합니다.
 - AssembleDB: 검사된 원천을 출처별로 조립하고 CSV·JSON·Parquet 출력의 내용과 계약을 검증합니다.
 - 원본 파일 해시와 행 번호를 보존해 후속 ML 결과를 원천까지 추적합니다.
 - 모델 학습과 실제 서비스 DB 적재는 수행하지 않습니다.
@@ -29,7 +29,7 @@ flowchart LR
   class ML,REPORT output
 ```
 
-서비스 후보 파일은 운영 DB가 아닙니다. 현재 서비스·STR 시연은 백엔드의 HI-Small 전체 적재 DB에서 경보를 만들고 필요한 근거를 추출하는 방향을 협의 중입니다. 무작위 10,000행은 전체 이력이나 룰 탐지 재현을 보장하지 않습니다.
+서비스·STR 시연은 백엔드가 HI-Small 원천 파일을 서비스 DB에 적재한 뒤 경보를 만들고 근거 거래를 조회합니다. 무작위 10,000행은 전체 이력이나 룰 탐지 재현을 보장하지 않습니다.
 
 ## 폴더별 역할
 
@@ -57,18 +57,20 @@ flowchart LR
 
 새 가상환경에 두 패키지를 함께 설치하고 작업용 설정 사본을 구성합니다. [설치 및 데이터 인계](docs/final-data-handoff.md)를 참고합니다.
 
-## CI/CD 구조
+## 시스템 아키텍처
 
-![다자바 MLDB의 원천 검증과 조립 데이터 인계 및 GitHub 검사](docs/images/mldb-architecture-ci.png)
+![DBcheck로 원천을 검사하고 AssembleDB로 출처별 조립본을 검증해 ML에 인계하는 흐름](docs/images/mldb-architecture-ci.png)
+
+### CI/CD 구조
 
 원격 `ml-sync-check`는 PR 규약과 동기화 도구를 검사하고, `ml-sync-manual`은 수동 WBS/Jira 동기화를 담당한다. 원천 검사와 파일 조립·검증은 [로컬 데이터 인계 절차](docs/final-data-handoff.md)를 따른다.
 
 <!-- cicd-pipeline-image: mldb-cicd-pipeline -->
 [이전 CI/CD 그림](docs/images/mldb-cicd-pipeline.png)
 
-[확대 가능한 SVG 원본](docs/images/mldb-cicd-pipeline.svg)
+[이전 CI/CD 그림의 SVG 원본](docs/images/mldb-cicd-pipeline.svg)
 
-실제 기술·라이브러리 로고로 구성한 그림입니다. 파란 실선은 현재 로컬에서 확인한 정의·구현, 초록 점선은 CI/CD 제안, 주황 점선은 사용자 실행·별도 승인 또는 후속 검증 단계입니다. 워크플로 정의와 실제 실행 성공은 구분하며, 미확정 배포 기술은 로고로 단정하지 않습니다. 아래 Mermaid와 기존 설명은 편집 가능한 요약으로 보존합니다.
+이전 CI/CD 그림의 파란 실선은 현재 로컬에서 확인한 정의·구현, 초록 점선은 CI/CD 제안, 주황 점선은 사용자 실행·별도 승인 또는 후속 검증 단계입니다. 워크플로 정의와 실제 실행 성공은 구분하며, 미확정 배포 기술은 로고로 단정하지 않습니다. 아래 Mermaid와 기존 설명은 편집 가능한 요약으로 보존합니다.
 <!-- /cicd-pipeline-image -->
 
 ```mermaid
